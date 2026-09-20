@@ -36,6 +36,11 @@ def test_get_bitwig_tools():
         "duplicate_track",
         "rename_track",
         "add_track",
+        "set_track_record_quantization",
+        "set_launcher_post_recording_action",
+        "set_launcher_default_quantization",
+        "setup_live_loop_track",
+        "next_live_loop_take",
         "set_device_parameter",
         # Device tools
         "toggle_device_bypass",
@@ -436,6 +441,175 @@ async def test_execute_tool_add_track():
     # Invalid track_type
     result = await execute_tool(controller, "add_track", {"track_type": "bogus"})
     assert "Invalid track_type" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_track_record_quantization():
+    """Test execute_tool with set_track_record_quantization tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller,
+        "set_track_record_quantization",
+        {"track_index": 1, "quantization": "off"},
+    )
+    controller.client.set_track_record_quantization.assert_called_once_with(1, "off")
+    assert "Record quantization set to off" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "set_track_record_quantization", {})
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid track_index
+    result = await execute_tool(
+        controller,
+        "set_track_record_quantization",
+        {"track_index": 0, "quantization": "off"},
+    )
+    assert "Invalid track_index" in result[0].text
+
+    # Invalid quantization
+    result = await execute_tool(
+        controller,
+        "set_track_record_quantization",
+        {"track_index": 1, "quantization": "1/3"},
+    )
+    assert "Invalid quantization" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_launcher_post_recording_action():
+    """Test execute_tool with set_launcher_post_recording_action tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller,
+        "set_launcher_post_recording_action",
+        {"action": "play_recorded"},
+    )
+    controller.client.set_launcher_post_recording_action.assert_called_once_with(
+        "play_recorded"
+    )
+    assert "Post-recording action set to play_recorded" in result[0].text
+
+    result = await execute_tool(controller, "set_launcher_post_recording_action", {})
+    assert "Missing required argument" in result[0].text
+
+    result = await execute_tool(
+        controller, "set_launcher_post_recording_action", {"action": "bogus"}
+    )
+    assert "Invalid action" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_launcher_default_quantization():
+    """Test execute_tool with set_launcher_default_quantization tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller, "set_launcher_default_quantization", {"quantization": "none"}
+    )
+    controller.client.set_launcher_default_quantization.assert_called_once_with("none")
+    assert "Launch quantization set to none" in result[0].text
+
+    result = await execute_tool(controller, "set_launcher_default_quantization", {})
+    assert "Missing required argument" in result[0].text
+
+    result = await execute_tool(
+        controller, "set_launcher_default_quantization", {"quantization": "bogus"}
+    )
+    assert "Invalid quantization" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_setup_live_loop_track():
+    """Test execute_tool with setup_live_loop_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "setup_live_loop_track", {"track_index": 3})
+
+    controller.client.set_track_record_quantization.assert_called_once_with(3, "off")
+    controller.client.set_launcher_post_recording_action.assert_called_once_with(
+        "play_recorded"
+    )
+    controller.client.set_launcher_default_quantization.assert_called_once_with("none")
+    controller.client.set_track_record_arm.assert_called_once_with(3, True)
+    assert "Track 3 configured for live looping and armed" in result[0].text
+
+    # Custom launch quantization
+    controller.client.set_launcher_default_quantization.reset_mock()
+    result = await execute_tool(
+        controller,
+        "setup_live_loop_track",
+        {"track_index": 1, "launch_quantization": "1/4"},
+    )
+    controller.client.set_launcher_default_quantization.assert_called_once_with("1/4")
+
+    # Missing argument
+    result = await execute_tool(controller, "setup_live_loop_track", {})
+    assert "Missing required argument" in result[0].text
+
+    # Invalid track_index
+    result = await execute_tool(controller, "setup_live_loop_track", {"track_index": 0})
+    assert "Invalid track_index" in result[0].text
+
+    # Invalid launch_quantization
+    result = await execute_tool(
+        controller,
+        "setup_live_loop_track",
+        {"track_index": 1, "launch_quantization": "bogus"},
+    )
+    assert "Invalid launch_quantization" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_next_live_loop_take():
+    """Test execute_tool with next_live_loop_take tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller, "next_live_loop_take", {"current_track_index": 2}
+    )
+
+    controller.client.duplicate_track.assert_called_once_with(2)
+    controller.client.select_track.assert_called_once_with(3)
+    controller.client.set_track_record_arm.assert_any_call(3, True)
+    controller.client.set_track_record_arm.assert_any_call(2, False)
+    assert controller.client.set_track_record_arm.call_count == 2
+    assert "New loop take armed on track 3" in result[0].text
+    assert "duplicated from track 2" in result[0].text
+
+    # disarm_previous=False should only arm the new track
+    controller.client.set_track_record_arm.reset_mock()
+    result = await execute_tool(
+        controller,
+        "next_live_loop_take",
+        {"current_track_index": 2, "disarm_previous": False},
+    )
+    controller.client.set_track_record_arm.assert_called_once_with(3, True)
+
+    # Missing argument
+    result = await execute_tool(controller, "next_live_loop_take", {})
+    assert "Missing required argument" in result[0].text
+
+    # Invalid current_track_index
+    result = await execute_tool(
+        controller, "next_live_loop_take", {"current_track_index": 0}
+    )
+    assert "Invalid current_track_index" in result[0].text
+
+    # Invalid disarm_previous type
+    result = await execute_tool(
+        controller,
+        "next_live_loop_take",
+        {"current_track_index": 1, "disarm_previous": "yes"},
+    )
+    assert "Invalid disarm_previous" in result[0].text
 
 
 @pytest.mark.asyncio

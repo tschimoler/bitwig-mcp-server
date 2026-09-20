@@ -358,6 +358,141 @@ def get_bitwig_tools() -> List[Tool]:
                 "required": ["track_type"],
             },
         ),
+        # Clip launcher / live looping tools
+        Tool(
+            name="set_track_record_quantization",
+            description=(
+                "Set record quantization for a track's MIDI input. Note: Bitwig "
+                "treats this as a single global preference despite the per-track "
+                "address, so it affects the whole project."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "quantization": {
+                        "type": "string",
+                        "enum": ["off", "1/32", "1/16", "1/8", "1/4"],
+                        "description": "Record quantization grid, or 'off'",
+                    },
+                },
+                "required": ["track_index", "quantization"],
+            },
+        ),
+        Tool(
+            name="set_launcher_post_recording_action",
+            description="Set the action the clip launcher takes immediately after recording a clip",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "off",
+                            "play_recorded",
+                            "record_next_free_slot",
+                            "stop",
+                            "return_to_arrangement",
+                            "return_to_previous_clip",
+                            "play_random",
+                        ],
+                        "description": "Post-recording action ('play_recorded' starts playback immediately when recording ends)",
+                    },
+                },
+                "required": ["action"],
+            },
+        ),
+        Tool(
+            name="set_launcher_default_quantization",
+            description="Set the default clip launch quantization (how clip playback is aligned when triggered)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "quantization": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "1",
+                            "2",
+                            "4",
+                            "8",
+                            "1/2",
+                            "1/4",
+                            "1/8",
+                            "1/16",
+                        ],
+                        "description": "Launch quantization grid, or 'none' for immediate (zero-lag) triggering",
+                    },
+                },
+                "required": ["quantization"],
+            },
+        ),
+        Tool(
+            name="setup_live_loop_track",
+            description=(
+                "Configure a track for live looping: turns record quantization off, "
+                "sets the clip launcher to start playback immediately when recording "
+                "ends, sets launch quantization (default 'none' for zero-lag "
+                "triggering), and arms the track for recording. Place the track in a "
+                "group beforehand (Bitwig has no OSC command to create/assign groups) "
+                "so future takes created with next_live_loop_take stay grouped."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index to configure and arm (1-based)",
+                    },
+                    "launch_quantization": {
+                        "type": "string",
+                        "enum": [
+                            "none",
+                            "1",
+                            "2",
+                            "4",
+                            "8",
+                            "1/2",
+                            "1/4",
+                            "1/8",
+                            "1/16",
+                        ],
+                        "description": "Launch quantization to apply (default 'none')",
+                        "default": "none",
+                    },
+                },
+                "required": ["track_index"],
+            },
+        ),
+        Tool(
+            name="next_live_loop_take",
+            description=(
+                "Advance a live looping session to a new take: duplicates the "
+                "current loop track (Bitwig places the duplicate immediately after "
+                "the source and keeps it in the same group), arms the new track, "
+                "and by default disarms the previous one. Assumes the new track "
+                "lands at current_track_index + 1, matching Bitwig's standard "
+                "duplicate placement."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "current_track_index": {
+                        "type": "integer",
+                        "description": "Index of the currently armed loop track (1-based)",
+                    },
+                    "disarm_previous": {
+                        "type": "boolean",
+                        "description": "Whether to disarm the previous loop track (default true)",
+                        "default": True,
+                    },
+                },
+                "required": ["current_track_index"],
+            },
+        ),
         Tool(
             name="set_device_parameter",
             description="Set value of a device parameter",
@@ -886,6 +1021,160 @@ async def execute_tool(
 
             controller.client.add_track(track_type)
             return [TextContent(type="text", text=f"Added {track_type} track")]
+
+        elif name == "set_track_record_quantization":
+            track_index = arguments.get("track_index")
+            quantization = arguments.get("quantization")
+
+            if track_index is None or quantization is None:
+                raise ValueError(
+                    "Missing required arguments: track_index, quantization"
+                )
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if quantization not in ("off", "1/32", "1/16", "1/8", "1/4"):
+                raise ValueError(
+                    "Invalid quantization: must be one of 'off', '1/32', '1/16', "
+                    "'1/8', '1/4'"
+                )
+
+            controller.client.set_track_record_quantization(track_index, quantization)
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Record quantization set to {quantization}",
+                )
+            ]
+
+        elif name == "set_launcher_post_recording_action":
+            action = arguments.get("action")
+
+            if action is None:
+                raise ValueError("Missing required argument: action")
+
+            valid_actions = (
+                "off",
+                "play_recorded",
+                "record_next_free_slot",
+                "stop",
+                "return_to_arrangement",
+                "return_to_previous_clip",
+                "play_random",
+            )
+            if action not in valid_actions:
+                raise ValueError(f"Invalid action: must be one of {valid_actions}")
+
+            controller.client.set_launcher_post_recording_action(action)
+            return [
+                TextContent(type="text", text=f"Post-recording action set to {action}")
+            ]
+
+        elif name == "set_launcher_default_quantization":
+            quantization = arguments.get("quantization")
+
+            if quantization is None:
+                raise ValueError("Missing required argument: quantization")
+
+            valid_quantizations = (
+                "none",
+                "1",
+                "2",
+                "4",
+                "8",
+                "1/2",
+                "1/4",
+                "1/8",
+                "1/16",
+            )
+            if quantization not in valid_quantizations:
+                raise ValueError(
+                    f"Invalid quantization: must be one of {valid_quantizations}"
+                )
+
+            controller.client.set_launcher_default_quantization(quantization)
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Launch quantization set to {quantization}",
+                )
+            ]
+
+        elif name == "setup_live_loop_track":
+            track_index = arguments.get("track_index")
+            launch_quantization = arguments.get("launch_quantization", "none")
+
+            if track_index is None:
+                raise ValueError("Missing required argument: track_index")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            valid_quantizations = (
+                "none",
+                "1",
+                "2",
+                "4",
+                "8",
+                "1/2",
+                "1/4",
+                "1/8",
+                "1/16",
+            )
+            if launch_quantization not in valid_quantizations:
+                raise ValueError(
+                    f"Invalid launch_quantization: must be one of {valid_quantizations}"
+                )
+
+            controller.client.set_track_record_quantization(track_index, "off")
+            controller.client.set_launcher_post_recording_action("play_recorded")
+            controller.client.set_launcher_default_quantization(launch_quantization)
+            controller.client.set_track_record_arm(track_index, True)
+
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"Track {track_index} configured for live looping and armed "
+                        f"(record quantization off, launch quantization "
+                        f"{launch_quantization}, plays immediately on record stop)"
+                    ),
+                )
+            ]
+
+        elif name == "next_live_loop_take":
+            current_track_index = arguments.get("current_track_index")
+            disarm_previous = arguments.get("disarm_previous", True)
+
+            if current_track_index is None:
+                raise ValueError("Missing required argument: current_track_index")
+
+            if not isinstance(current_track_index, int) or current_track_index < 1:
+                raise ValueError(
+                    "Invalid current_track_index: must be a positive integer"
+                )
+
+            if not isinstance(disarm_previous, bool):
+                raise ValueError("Invalid disarm_previous: must be a boolean")
+
+            new_track_index = current_track_index + 1
+
+            controller.client.duplicate_track(current_track_index)
+            controller.client.select_track(new_track_index)
+            controller.client.set_track_record_arm(new_track_index, True)
+            if disarm_previous:
+                controller.client.set_track_record_arm(current_track_index, False)
+
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"New loop take armed on track {new_track_index} "
+                        f"(duplicated from track {current_track_index})"
+                    ),
+                )
+            ]
 
         elif name == "set_device_parameter":
             param_index = arguments.get("param_index")

@@ -264,6 +264,50 @@ class TestBitwigOSCClient(unittest.TestCase):
         with pytest.raises(InvalidParameterError):
             self.client.rename_track(1, "   ")  # Whitespace-only name
 
+    def test_clip_launcher_controls(self):
+        """Test record quantization and launcher settings methods"""
+        self.client.set_track_record_quantization(1, "off")
+        self.client.client.send_message.assert_called_with(
+            "/track/1/recordQuantization", "OFF"
+        )
+
+        self.client.set_track_record_quantization(1, "1/16")
+        self.client.client.send_message.assert_called_with(
+            "/track/1/recordQuantization", "1/16"
+        )
+
+        # Case-insensitive "off"
+        self.client.set_track_record_quantization(1, "OFF")
+        self.client.client.send_message.assert_called_with(
+            "/track/1/recordQuantization", "OFF"
+        )
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_record_quantization(0, "off")  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_record_quantization(1, "1/3")  # Invalid value
+
+        self.client.set_launcher_post_recording_action("play_recorded")
+        self.client.client.send_message.assert_called_with(
+            "/launcher/postRecordingAction", "play_recorded"
+        )
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_launcher_post_recording_action("invalid")
+
+        self.client.set_launcher_default_quantization("none")
+        self.client.client.send_message.assert_called_with(
+            "/launcher/defaultQuantization", "none"
+        )
+
+        self.client.set_launcher_default_quantization("1/4")
+        self.client.client.send_message.assert_called_with(
+            "/launcher/defaultQuantization", "1/4"
+        )
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_launcher_default_quantization("invalid")
+
     def test_browser_basic_controls(self):
         """Test basic browser control methods"""
         # Test browse for device

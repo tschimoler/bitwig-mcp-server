@@ -528,6 +528,109 @@ class BitwigOSCClient:
 
         self.send(f"/track/{track_index}/name", name)
 
+    # Clip launcher controls
+    RECORD_QUANTIZATION_VALUES = ("off", "1/32", "1/16", "1/8", "1/4")
+    POST_RECORDING_ACTIONS = (
+        "off",
+        "play_recorded",
+        "record_next_free_slot",
+        "stop",
+        "return_to_arrangement",
+        "return_to_previous_clip",
+        "play_random",
+    )
+    LAUNCH_QUANTIZATION_VALUES = (
+        "none",
+        "1",
+        "2",
+        "4",
+        "8",
+        "1/2",
+        "1/4",
+        "1/8",
+        "1/16",
+    )
+
+    def set_track_record_quantization(
+        self, track_index: int, quantization: str
+    ) -> None:
+        """Set the record quantization for a track's MIDI input.
+
+        Note: per the DrivenByMoss OSC reference, this is actually a single
+        global Bitwig preference despite being addressed per-track; setting
+        it via any track index changes it project-wide.
+
+        Args:
+            track_index: Track index (1-based)
+            quantization: One of "off", "1/32", "1/16", "1/8", "1/4"
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if (
+            not isinstance(quantization, str)
+            or quantization.lower() not in self.RECORD_QUANTIZATION_VALUES
+        ):
+            raise InvalidParameterError(
+                "quantization",
+                quantization,
+                f"must be one of {self.RECORD_QUANTIZATION_VALUES}",
+            )
+
+        # Bitwig expects "OFF" uppercase but the fraction values as-is
+        value = "OFF" if quantization.lower() == "off" else quantization
+        self.send(f"/track/{track_index}/recordQuantization", value)
+
+    def set_launcher_post_recording_action(self, action: str) -> None:
+        """Set the action the clip launcher takes after recording a clip.
+
+        Args:
+            action: One of "off", "play_recorded", "record_next_free_slot",
+                "stop", "return_to_arrangement", "return_to_previous_clip",
+                "play_random"
+
+        Raises:
+            InvalidParameterError: If action is invalid
+            ConnectionError: If unable to send the command
+        """
+        if action not in self.POST_RECORDING_ACTIONS:
+            raise InvalidParameterError(
+                "action", action, f"must be one of {self.POST_RECORDING_ACTIONS}"
+            )
+
+        self.send("/launcher/postRecordingAction", action)
+
+    def set_launcher_default_quantization(self, quantization: str) -> None:
+        """Set the default clip launcher (launch) quantization.
+
+        Args:
+            quantization: One of "none", "1", "2", "4", "8", "1/2", "1/4",
+                "1/8", "1/16"
+
+        Raises:
+            InvalidParameterError: If quantization is invalid
+            ConnectionError: If unable to send the command
+        """
+        if quantization not in self.LAUNCH_QUANTIZATION_VALUES:
+            raise InvalidParameterError(
+                "quantization",
+                quantization,
+                f"must be one of {self.LAUNCH_QUANTIZATION_VALUES}",
+            )
+
+        self.send("/launcher/defaultQuantization", quantization)
+
     # Device controls
     def set_device_parameter(self, param_index: int, value: float) -> None:
         """Set device parameter value
