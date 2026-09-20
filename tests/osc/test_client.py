@@ -116,6 +116,154 @@ class TestBitwigOSCClient(unittest.TestCase):
         self.client.toggle_track_mute(4)
         self.client.client.send_message.assert_called_with("/track/4/mute", None)
 
+    def test_numeric_values_are_sent_as_floats(self):
+        """Regression test: ranged OSC values must be sent as floats.
+
+        Bitwig's OSC "Value Resolution" handling can silently ignore
+        updates sent as ints, so tempo/volume/pan/param values must be
+        coerced to float before being sent.
+        """
+        self.client.set_tempo(120)
+        args, _ = self.client.client.send_message.call_args
+        self.assertEqual(args, ("/tempo/raw", 120.0))
+        self.assertIsInstance(args[1], float)
+
+        self.client.set_track_volume(1, 64)
+        args, _ = self.client.client.send_message.call_args
+        self.assertEqual(args, ("/track/1/volume", 64.0))
+        self.assertIsInstance(args[1], float)
+
+        self.client.set_track_pan(1, 32)
+        args, _ = self.client.client.send_message.call_args
+        self.assertEqual(args, ("/track/1/pan", 32.0))
+        self.assertIsInstance(args[1], float)
+
+        self.client.set_device_parameter(1, 100)
+        args, _ = self.client.client.send_message.call_args
+        self.assertEqual(args, ("/device/param/1/value", 100.0))
+        self.assertIsInstance(args[1], float)
+
+    def test_transport_record_and_repeat(self):
+        """Test record and repeat transport methods"""
+        self.client.record()
+        self.client.client.send_message.assert_called_with("/record", 1)
+
+        self.client.repeat(True)
+        self.client.client.send_message.assert_called_with("/repeat", 1)
+
+        self.client.repeat(False)
+        self.client.client.send_message.assert_called_with("/repeat", 0)
+
+        self.client.repeat()
+        self.client.client.send_message.assert_called_with("/repeat", None)
+
+    def test_track_send_controls(self):
+        """Test track send volume/enable methods"""
+        self.client.set_track_send_volume(1, 2, 100)
+        self.client.client.send_message.assert_called_with(
+            "/track/1/send/2/volume", 100.0
+        )
+
+        # Clamping
+        self.client.set_track_send_volume(1, 2, -10)
+        self.client.client.send_message.assert_called_with(
+            "/track/1/send/2/volume", 0.0
+        )
+        self.client.set_track_send_volume(1, 2, 200)
+        self.client.client.send_message.assert_called_with(
+            "/track/1/send/2/volume", 128.0
+        )
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_volume(0, 1, 64)  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_volume(1, 0, 64)  # Invalid send_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_volume(1, 1, "not-a-number")
+
+        self.client.set_track_send_enabled(1, 2, True)
+        self.client.client.send_message.assert_called_with(
+            "/track/1/send/2/activated", 1
+        )
+        self.client.set_track_send_enabled(1, 2, False)
+        self.client.client.send_message.assert_called_with(
+            "/track/1/send/2/activated", 0
+        )
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_enabled(0, 1, True)  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_enabled(1, 0, True)  # Invalid send_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_send_enabled(1, 1, "not-a-bool")
+
+    def test_track_record_arm_and_solo(self):
+        """Test track record arm and solo methods"""
+        self.client.set_track_record_arm(1, True)
+        self.client.client.send_message.assert_called_with("/track/1/recarm", 1)
+
+        self.client.set_track_record_arm(1, False)
+        self.client.client.send_message.assert_called_with("/track/1/recarm", 0)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_record_arm(0, True)  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_record_arm(1, "not-a-bool")
+
+        self.client.set_track_solo(1, True)
+        self.client.client.send_message.assert_called_with("/track/1/solo", 1)
+
+        self.client.set_track_solo(1, False)
+        self.client.client.send_message.assert_called_with("/track/1/solo", 0)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_solo(0, True)  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.set_track_solo(1, "not-a-bool")
+
+    def test_track_management(self):
+        """Test track add/select/delete/duplicate/rename methods"""
+        self.client.add_track("instrument")
+        self.client.client.send_message.assert_called_with("/track/add/instrument", 1)
+
+        # Track type is case-insensitive
+        self.client.add_track("AUDIO")
+        self.client.client.send_message.assert_called_with("/track/add/audio", 1)
+
+        self.client.add_track("effect")
+        self.client.client.send_message.assert_called_with("/track/add/effect", 1)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.add_track("invalid")
+
+        self.client.select_track(3)
+        self.client.client.send_message.assert_called_with("/track/3/select", 1)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.select_track(0)
+
+        self.client.delete_track(2)
+        self.client.client.send_message.assert_called_with("/track/2/remove", 1)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.delete_track(0)
+
+        self.client.duplicate_track(4)
+        self.client.client.send_message.assert_called_with("/track/4/duplicate", 1)
+
+        with pytest.raises(InvalidParameterError):
+            self.client.duplicate_track(0)
+
+        self.client.rename_track(1, "Bass")
+        self.client.client.send_message.assert_called_with("/track/1/name", "Bass")
+
+        with pytest.raises(InvalidParameterError):
+            self.client.rename_track(0, "Bass")  # Invalid track_index
+        with pytest.raises(InvalidParameterError):
+            self.client.rename_track(1, "")  # Empty name
+        with pytest.raises(InvalidParameterError):
+            self.client.rename_track(1, "   ")  # Whitespace-only name
+
     def test_browser_basic_controls(self):
         """Test basic browser control methods"""
         # Test browse for device

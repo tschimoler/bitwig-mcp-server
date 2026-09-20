@@ -20,10 +20,22 @@ def test_get_bitwig_tools():
     expected_core_names = {
         # Basic transport and track tools
         "transport_play",
+        "transport_stop",
+        "transport_record",
+        "transport_repeat",
         "set_tempo",
         "set_track_volume",
+        "set_track_send_volume",
+        "set_track_send_enabled",
         "set_track_pan",
         "toggle_track_mute",
+        "set_track_record_arm",
+        "set_track_solo",
+        "select_track",
+        "delete_track",
+        "duplicate_track",
+        "rename_track",
+        "add_track",
         "set_device_parameter",
         # Device tools
         "toggle_device_bypass",
@@ -143,6 +155,287 @@ async def test_execute_tool_set_track_volume():
     assert len(result) == 1
     assert result[0].type == "text"
     assert "Track 1 volume set to 64" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_transport_stop():
+    """Test execute_tool with transport_stop tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "transport_stop", {})
+
+    controller.client.stop.assert_called_once()
+    assert result[0].text == "Transport stopped"
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_transport_record():
+    """Test execute_tool with transport_record tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "transport_record", {})
+
+    controller.client.record.assert_called_once()
+    assert result[0].text == "Recording started"
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_transport_repeat():
+    """Test execute_tool with transport_repeat tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    # Toggle (no state provided)
+    result = await execute_tool(controller, "transport_repeat", {})
+    controller.client.repeat.assert_called_with(None)
+    assert result[0].text == "Repeat toggled"
+
+    # Explicit enable
+    result = await execute_tool(controller, "transport_repeat", {"state": True})
+    controller.client.repeat.assert_called_with(True)
+    assert result[0].text == "Repeat enabled"
+
+    # Explicit disable
+    result = await execute_tool(controller, "transport_repeat", {"state": False})
+    controller.client.repeat.assert_called_with(False)
+    assert result[0].text == "Repeat disabled"
+
+    # Invalid state type
+    result = await execute_tool(controller, "transport_repeat", {"state": "yes"})
+    assert "Error" in result[0].text
+    assert "Invalid state" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_track_send_volume():
+    """Test execute_tool with set_track_send_volume tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller,
+        "set_track_send_volume",
+        {"track_index": 1, "send_index": 2, "volume": 100},
+    )
+    controller.client.set_track_send_volume.assert_called_once_with(1, 2, 100)
+    assert "Track 1 send 2 volume set to 100" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "set_track_send_volume", {})
+    assert "Error" in result[0].text
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid track_index
+    result = await execute_tool(
+        controller,
+        "set_track_send_volume",
+        {"track_index": 0, "send_index": 1, "volume": 64},
+    )
+    assert "Invalid track_index" in result[0].text
+
+    # Invalid send_index
+    result = await execute_tool(
+        controller,
+        "set_track_send_volume",
+        {"track_index": 1, "send_index": 0, "volume": 64},
+    )
+    assert "Invalid send_index" in result[0].text
+
+    # Invalid volume
+    result = await execute_tool(
+        controller,
+        "set_track_send_volume",
+        {"track_index": 1, "send_index": 1, "volume": 200},
+    )
+    assert "Invalid volume" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_track_send_enabled():
+    """Test execute_tool with set_track_send_enabled tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller,
+        "set_track_send_enabled",
+        {"track_index": 1, "send_index": 2, "enabled": True},
+    )
+    controller.client.set_track_send_enabled.assert_called_once_with(1, 2, True)
+    assert "Track 1 send 2 enabled" in result[0].text
+
+    result = await execute_tool(
+        controller,
+        "set_track_send_enabled",
+        {"track_index": 1, "send_index": 2, "enabled": False},
+    )
+    assert "Track 1 send 2 disabled" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "set_track_send_enabled", {})
+    assert "Error" in result[0].text
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid enabled type
+    result = await execute_tool(
+        controller,
+        "set_track_send_enabled",
+        {"track_index": 1, "send_index": 1, "enabled": "yes"},
+    )
+    assert "Invalid enabled" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_track_record_arm():
+    """Test execute_tool with set_track_record_arm tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller, "set_track_record_arm", {"track_index": 1, "armed": True}
+    )
+    controller.client.set_track_record_arm.assert_called_once_with(1, True)
+    assert "Track 1 record armed" in result[0].text
+
+    result = await execute_tool(
+        controller, "set_track_record_arm", {"track_index": 1, "armed": False}
+    )
+    assert "Track 1 record disarmed" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "set_track_record_arm", {})
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid track_index
+    result = await execute_tool(
+        controller, "set_track_record_arm", {"track_index": 0, "armed": True}
+    )
+    assert "Invalid track_index" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_set_track_solo():
+    """Test execute_tool with set_track_solo tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller, "set_track_solo", {"track_index": 1, "solo": True}
+    )
+    controller.client.set_track_solo.assert_called_once_with(1, True)
+    assert "Track 1 solo enabled" in result[0].text
+
+    result = await execute_tool(
+        controller, "set_track_solo", {"track_index": 1, "solo": False}
+    )
+    assert "Track 1 solo disabled" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "set_track_solo", {})
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid track_index
+    result = await execute_tool(
+        controller, "set_track_solo", {"track_index": 0, "solo": True}
+    )
+    assert "Invalid track_index" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_select_track():
+    """Test execute_tool with select_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "select_track", {"track_index": 3})
+    controller.client.select_track.assert_called_once_with(3)
+    assert "Track 3 selected" in result[0].text
+
+    result = await execute_tool(controller, "select_track", {})
+    assert "Missing required argument" in result[0].text
+
+    result = await execute_tool(controller, "select_track", {"track_index": 0})
+    assert "Invalid track_index" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_delete_track():
+    """Test execute_tool with delete_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "delete_track", {"track_index": 2})
+    controller.client.delete_track.assert_called_once_with(2)
+    assert "Track 2 deleted" in result[0].text
+
+    result = await execute_tool(controller, "delete_track", {})
+    assert "Missing required argument" in result[0].text
+
+    result = await execute_tool(controller, "delete_track", {"track_index": 0})
+    assert "Invalid track_index" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_duplicate_track():
+    """Test execute_tool with duplicate_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(controller, "duplicate_track", {"track_index": 4})
+    controller.client.duplicate_track.assert_called_once_with(4)
+    assert "Track 4 duplicated" in result[0].text
+
+    result = await execute_tool(controller, "duplicate_track", {})
+    assert "Missing required argument" in result[0].text
+
+    result = await execute_tool(controller, "duplicate_track", {"track_index": 0})
+    assert "Invalid track_index" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_rename_track():
+    """Test execute_tool with rename_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    result = await execute_tool(
+        controller, "rename_track", {"track_index": 1, "name": "Bass"}
+    )
+    controller.client.rename_track.assert_called_once_with(1, "Bass")
+    assert "Track 1 renamed to Bass" in result[0].text
+
+    # Missing arguments
+    result = await execute_tool(controller, "rename_track", {})
+    assert "Missing required arguments" in result[0].text
+
+    # Invalid name
+    result = await execute_tool(
+        controller, "rename_track", {"track_index": 1, "name": "   "}
+    )
+    assert "Invalid name" in result[0].text
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_add_track():
+    """Test execute_tool with add_track tool."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    for track_type in ("instrument", "audio", "effect"):
+        controller.client.add_track.reset_mock()
+        result = await execute_tool(controller, "add_track", {"track_type": track_type})
+        controller.client.add_track.assert_called_once_with(track_type)
+        assert f"Added {track_type} track" in result[0].text
+
+    # Missing argument
+    result = await execute_tool(controller, "add_track", {})
+    assert "Missing required argument" in result[0].text
+
+    # Invalid track_type
+    result = await execute_tool(controller, "add_track", {"track_type": "bogus"})
+    assert "Invalid track_type" in result[0].text
 
 
 @pytest.mark.asyncio

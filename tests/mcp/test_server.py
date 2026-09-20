@@ -7,8 +7,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcp.types import TextContent
 
-from bitwig_mcp_server.mcp.server import BitwigMCPServer
+from bitwig_mcp_server.mcp.server import BitwigMCPServer, run_server
 from bitwig_mcp_server.settings import Settings
+
+
+class _FakeStdioContext:
+    """Minimal async context manager standing in for stdio_server()."""
+
+    async def __aenter__(self):
+        return ("read-stream", "write-stream")
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
 
 @pytest.fixture
@@ -163,3 +173,55 @@ async def test_read_resource_error(bitwig_mcp_server, mock_osc_controller):
         assert "Failed to read resource test://uri: Resource error" in str(
             excinfo.value
         )
+
+
+@pytest.mark.asyncio
+async def test_run_server_serves_protocol_over_stdio():
+    """Regression test: run_server must actually drive the MCP protocol.
+
+    Previously run_server() just slept in a loop forever and never called
+    mcp_server.run(), so the server never served any requests over stdio.
+    """
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+    mock_server.mcp_server = MagicMock()
+    mock_server.mcp_server.run = AsyncMock()
+    mock_server.mcp_server.create_initialization_options.return_value = "init-options"
+
+    with (
+        patch("bitwig_mcp_server.mcp.server.BitwigMCPServer", return_value=mock_server),
+        patch(
+            "bitwig_mcp_server.mcp.server.stdio_server",
+            return_value=_FakeStdioContext(),
+        ),
+    ):
+        await run_server()
+
+    mock_server.start.assert_awaited_once()
+    mock_server.mcp_server.run.assert_awaited_once_with(
+        "read-stream", "write-stream", "init-options"
+    )
+    mock_server.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_run_server_stops_server_on_protocol_error():
+    """Test that run_server still stops the controller if serving fails."""
+    mock_server = MagicMock()
+    mock_server.start = AsyncMock()
+    mock_server.stop = AsyncMock()
+    mock_server.mcp_server = MagicMock()
+    mock_server.mcp_server.run = AsyncMock(side_effect=RuntimeError("boom"))
+    mock_server.mcp_server.create_initialization_options.return_value = "init-options"
+
+    with (
+        patch("bitwig_mcp_server.mcp.server.BitwigMCPServer", return_value=mock_server),
+        patch(
+            "bitwig_mcp_server.mcp.server.stdio_server",
+            return_value=_FakeStdioContext(),
+        ),
+    ):
+        await run_server()
+
+    mock_server.stop.assert_awaited_once()

@@ -36,6 +36,10 @@ class TestBitwigOSCController(unittest.TestCase):
         self.mock_client.refresh.assert_called_once()
         self.assertTrue(self.controller.ready)
 
+        # VU meter streaming must be enabled on connect, or /track/{n}/vu
+        # never populates
+        self.mock_client.send.assert_any_call("/track/vu", 1)
+
         # Test stop
         self.controller.stop()
         self.mock_server.stop.assert_called_once()

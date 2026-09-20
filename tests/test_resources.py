@@ -13,6 +13,7 @@ from bitwig_mcp_server.mcp.resources import (
     _read_transport_resource,
     _read_tracks_resource,
     _read_track_resource,
+    _read_track_sends_resource,
     _read_devices_resource,
     _read_device_parameters_resource,
     _read_device_siblings_resource,
@@ -41,6 +42,7 @@ def test_get_bitwig_resources():
         "bitwig://transport",
         "bitwig://tracks",
         "bitwig://track/%7Bindex%7D",  # URL-encoded {index}
+        "bitwig://track/%7Bindex%7D/sends",  # URL-encoded {index}/sends
         "bitwig://devices",
         "bitwig://device/parameters",
         "bitwig://device/%7Bindex%7D",  # URL-encoded {index}
@@ -190,6 +192,30 @@ def test_read_transport_resource():
     assert "Time Signature: 4/4" in result
 
 
+def test_read_transport_resource_recording_state():
+    """Test _read_transport_resource reports record/repeat/automation state."""
+    controller = MagicMock()
+    controller.server = MagicMock()
+
+    controller.server.get_message.side_effect = lambda addr: {
+        "/play": True,
+        "/tempo/raw": 120.5,
+        "/signature/numerator": 4,
+        "/signature/denominator": 4,
+        "/record": True,
+        "/repeat": False,
+        "/autowrite": True,
+        "/automationWriteMode": "latch",
+    }.get(addr)
+
+    result = _read_transport_resource(controller)
+
+    assert "Recording: True" in result
+    assert "Repeat: False" in result
+    assert "Automation Write Enabled: True" in result
+    assert "Automation Write Mode: latch" in result
+
+
 def test_read_tracks_resource():
     """Test _read_tracks_resource function."""
     # Create mock controller
@@ -210,6 +236,8 @@ def test_read_tracks_resource():
             return 0
         elif addr == "/track/1/recarm":
             return 1
+        elif addr == "/track/1/vu":
+            return 96
         # Return None for other tracks
         elif addr.startswith("/track/"):
             return None if "/name" in addr else None
@@ -228,6 +256,7 @@ def test_read_tracks_resource():
     assert "Mute: False" in result
     assert "Solo: False" in result
     assert "Record Armed: True" in result
+    assert "VU: 96" in result
 
 
 def test_read_track_resource():
@@ -254,6 +283,8 @@ def test_read_track_resource():
             return 1
         elif addr == "/track/1/color":
             return "blue"
+        elif addr == "/track/1/vu":
+            return 87
         return None
 
     controller.server.get_message.side_effect = mock_get_message
@@ -271,6 +302,24 @@ def test_read_track_resource():
     assert "Solo: False" in result
     assert "Record Armed: True" in result
     assert "Color: blue" in result
+    assert "VU Level: 87" in result
+
+
+def test_read_tracks_resource_scans_up_to_32_tracks():
+    """Test that _read_tracks_resource picks up tracks beyond index 10."""
+    controller = MagicMock()
+    controller.server = MagicMock()
+
+    def mock_get_message(addr):
+        if addr == "/track/32/name":
+            return "Track 32"
+        return None
+
+    controller.server.get_message.side_effect = mock_get_message
+
+    result = _read_tracks_resource(controller)
+
+    assert "Track 32: Track 32" in result
 
 
 def test_read_track_resource_not_found():
@@ -285,6 +334,94 @@ def test_read_track_resource_not_found():
     # Read non-existent track
     with pytest.raises(ValueError, match="Track 1 not found"):
         _read_track_resource(controller, 1)
+
+
+def test_read_track_sends_resource():
+    """Test _read_track_sends_resource function."""
+    controller = MagicMock()
+    controller.server = MagicMock()
+
+    def mock_get_message(addr):
+        if addr == "/track/1/name":
+            return "Track 1"
+        elif addr == "/track/1/send/1/name":
+            return "Reverb Bus"
+        elif addr == "/track/1/send/1/volume":
+            return 90
+        elif addr == "/track/1/send/1/activated":
+            return 1
+        elif addr == "/track/1/send/2/name":
+            return "Delay Bus"
+        elif addr == "/track/1/send/2/volume":
+            return 40
+        elif addr == "/track/1/send/2/activated":
+            return 0
+        # Sends 3-8 do not exist
+        return None
+
+    controller.server.get_message.side_effect = mock_get_message
+
+    result = _read_track_sends_resource(controller, 1)
+
+    assert "Track 1 Sends:" in result
+    assert "Send 1: Reverb Bus - Volume: 90, Enabled: True" in result
+    assert "Send 2: Delay Bus - Volume: 40, Enabled: False" in result
+
+
+def test_read_track_sends_resource_not_found():
+    """Test _read_track_sends_resource with a non-existent track."""
+    controller = MagicMock()
+    controller.server = MagicMock()
+    controller.server.get_message.return_value = None
+
+    with pytest.raises(ValueError, match="Track 1 not found"):
+        _read_track_sends_resource(controller, 1)
+
+
+def test_read_track_sends_resource_no_sends():
+    """Test _read_track_sends_resource for a track with no configured sends."""
+    controller = MagicMock()
+    controller.server = MagicMock()
+
+    def mock_get_message(addr):
+        if addr == "/track/1/name":
+            return "Track 1"
+        return None
+
+    controller.server.get_message.side_effect = mock_get_message
+
+    result = _read_track_sends_resource(controller, 1)
+
+    assert result == "No sends found"
+
+
+@pytest.mark.asyncio
+async def test_read_resource_track_sends():
+    """Test read_resource with the track sends resource."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+    controller.server = MagicMock()
+
+    with patch(
+        "bitwig_mcp_server.mcp.resources._read_track_sends_resource"
+    ) as mock_read:
+        mock_read.return_value = "Track sends info"
+
+        result = await read_resource(controller, "bitwig://track/1/sends")
+
+        controller.client.refresh.assert_called_once()
+        mock_read.assert_called_once_with(controller, 1)
+        assert result == "Track sends info"
+
+
+@pytest.mark.asyncio
+async def test_read_resource_invalid_track_sends_uri():
+    """Test read_resource with an invalid track sends URI."""
+    controller = MagicMock()
+    controller.client = MagicMock()
+
+    with pytest.raises(ValueError, match="Invalid track sends URI"):
+        await read_resource(controller, "bitwig://track/invalid/sends")
 
 
 def test_read_devices_resource():
