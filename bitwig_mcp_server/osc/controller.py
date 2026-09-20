@@ -77,6 +77,9 @@ class BitwigOSCController:
             # Try to connect to Bitwig with timeout
             self._connect_with_timeout()
 
+            # Enable VU meter streaming from Bitwig (required to receive /track/{n}/vu updates)
+            self.client.send("/track/vu", 1)
+
             # Mark as ready
             self.ready = True
             self.connected = True

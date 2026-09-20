@@ -254,8 +254,6 @@ def test_read_track_resource():
             return 1
         elif addr == "/track/1/color":
             return "blue"
-        elif addr == "/track/1/sends":
-            return 2
         return None
 
     controller.server.get_message.side_effect = mock_get_message
@@ -273,7 +271,6 @@ def test_read_track_resource():
     assert "Solo: False" in result
     assert "Record Armed: True" in result
     assert "Color: blue" in result
-    assert "Send Count: 2" in result
 
 
 def test_read_track_resource_not_found():

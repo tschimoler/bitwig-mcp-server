@@ -9,6 +9,7 @@ import logging
 from typing import Any, List, Optional
 
 from mcp.server import Server as MCPServer
+from mcp.server.stdio import stdio_server
 from mcp.types import TextContent
 
 from bitwig_mcp_server.osc.controller import BitwigOSCController
@@ -132,7 +133,7 @@ class BitwigMCPServer:
         try:
             from bitwig_mcp_server.mcp.resources import read_resource
 
-            return await read_resource(self.controller, uri)
+            return await read_resource(self.controller, str(uri))
         except Exception as e:
             logger.exception(f"Error reading resource {uri}: {e}")
             raise ValueError(f"Failed to read resource {uri}: {e}")
@@ -149,9 +150,13 @@ async def run_server(settings: Optional[Settings] = None) -> None:
     try:
         await server.start()
 
-        # Keep the server running
-        while True:
-            await asyncio.sleep(1)
+        # Serve the MCP protocol over stdio until the client disconnects
+        async with stdio_server() as (read_stream, write_stream):
+            await server.mcp_server.run(
+                read_stream,
+                write_stream,
+                server.mcp_server.create_initialization_options(),
+            )
     except asyncio.CancelledError:
         pass
     except KeyboardInterrupt:

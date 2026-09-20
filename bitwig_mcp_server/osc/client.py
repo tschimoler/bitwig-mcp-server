@@ -103,6 +103,28 @@ class BitwigOSCClient:
         """
         self.send("/stop", 1)
 
+    def record(self) -> None:
+        """Start recording in the arranger
+
+        Raises:
+            ConnectionError: If unable to send the command
+        """
+        self.send("/record", 1)
+
+    def repeat(self, state: Optional[bool] = None) -> None:
+        """Control repeat/loop state
+
+        Args:
+            state: True to enable, False to disable, None to toggle
+
+        Raises:
+            ConnectionError: If unable to send the command
+        """
+        if state is None:
+            self.send("/repeat", None)  # Toggle
+        else:
+            self.send("/repeat", 1 if state else 0)
+
     def set_tempo(self, bpm: float) -> None:
         """Set the tempo
 
@@ -128,7 +150,7 @@ class BitwigOSCClient:
             logger.warning(f"Tempo {bpm} above maximum ({MAX_TEMPO}), clamping")
             bpm = MAX_TEMPO
 
-        self.send("/tempo/raw", bpm)
+        self.send("/tempo/raw", float(bpm))
 
     # Track controls
     def set_track_volume(self, track_index: int, volume: float) -> None:
@@ -165,7 +187,93 @@ class BitwigOSCClient:
             logger.warning(f"Volume {volume} above maximum ({MAX_VALUE}), clamping")
             volume = MAX_VALUE
 
-        self.send(f"/track/{track_index}/volume", volume)
+        self.send(f"/track/{track_index}/volume", float(volume))
+
+    def set_track_send_volume(
+        self, track_index: int, send_index: int, volume: float
+    ) -> None:
+        """Set track send volume
+
+        Args:
+            track_index: Track index (1-based)
+            send_index: Send index (1-based)
+            volume: Send volume value (0-128, where 64 is unity gain)
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(send_index, int):
+            raise InvalidParameterError("send_index", send_index, "must be an integer")
+
+        if send_index < 1:
+            raise InvalidParameterError(
+                "send_index", send_index, "must be at least 1 (1-based indexing)"
+            )
+
+        MAX_VALUE = 128
+        MIN_VALUE = 0
+
+        if not isinstance(volume, (int, float)):
+            raise InvalidParameterError("volume", volume, "must be a number")
+
+        if volume < MIN_VALUE:
+            logger.warning(f"Volume {volume} below minimum ({MIN_VALUE}), clamping")
+            volume = MIN_VALUE
+        elif volume > MAX_VALUE:
+            logger.warning(f"Volume {volume} above maximum ({MAX_VALUE}), clamping")
+            volume = MAX_VALUE
+
+        self.send(f"/track/{track_index}/send/{send_index}/volume", float(volume))
+
+    def set_track_send_enabled(
+        self, track_index: int, send_index: int, enabled: bool
+    ) -> None:
+        """Set track send enabled state
+
+        Args:
+            track_index: Track index (1-based)
+            send_index: Send index (1-based)
+            enabled: True to enable the send, False to disable
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(send_index, int):
+            raise InvalidParameterError("send_index", send_index, "must be an integer")
+
+        if send_index < 1:
+            raise InvalidParameterError(
+                "send_index", send_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(enabled, bool):
+            raise InvalidParameterError("enabled", enabled, "must be a boolean")
+
+        self.send(
+            f"/track/{track_index}/send/{send_index}/activated", 1 if enabled else 0
+        )
 
     def set_track_pan(self, track_index: int, pan: float) -> None:
         """Set track pan
@@ -205,7 +313,7 @@ class BitwigOSCClient:
             )
             pan = MAX_VALUE
 
-        self.send(f"/track/{track_index}/pan", pan)
+        self.send(f"/track/{track_index}/pan", float(pan))
 
     def toggle_track_mute(self, track_index: int) -> None:
         """Toggle track mute state
@@ -255,6 +363,171 @@ class BitwigOSCClient:
 
         self.send(f"/track/{track_index}/mute", 1 if mute else 0)
 
+    def set_track_record_arm(self, track_index: int, armed: bool) -> None:
+        """Set track record arm state
+
+        Args:
+            track_index: Track index (1-based)
+            armed: True to arm for recording, False to disarm
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(armed, bool):
+            raise InvalidParameterError("armed", armed, "must be a boolean")
+
+        self.send(f"/track/{track_index}/recarm", 1 if armed else 0)
+
+    def set_track_solo(self, track_index: int, solo: bool) -> None:
+        """Set track solo state
+
+        Args:
+            track_index: Track index (1-based)
+            solo: True to solo, False to disable solo
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(solo, bool):
+            raise InvalidParameterError("solo", solo, "must be a boolean")
+
+        self.send(f"/track/{track_index}/solo", 1 if solo else 0)
+
+    def add_track(self, track_type: str) -> None:
+        """Add a new track to the project
+
+        Note: Bitwig appends the new track to the end of the track list;
+        there is no OSC-level control over insertion position.
+
+        Args:
+            track_type: Type of track to create ("instrument", "audio", or "effect")
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        valid_types = ("instrument", "audio", "effect")
+        if not isinstance(track_type, str) or track_type.lower() not in valid_types:
+            raise InvalidParameterError(
+                "track_type", track_type, f"must be one of {valid_types}"
+            )
+
+        self.send(f"/track/add/{track_type.lower()}", 1)
+
+    def select_track(self, track_index: int) -> None:
+        """Select a track by its index
+
+        Args:
+            track_index: Index of the track to select (1-based)
+
+        Raises:
+            InvalidParameterError: If track_index is invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        self.send(f"/track/{track_index}/select", 1)
+
+    def delete_track(self, track_index: int) -> None:
+        """Delete a track by its index
+
+        Args:
+            track_index: Index of the track to delete (1-based)
+
+        Raises:
+            InvalidParameterError: If track_index is invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        self.send(f"/track/{track_index}/remove", 1)
+
+    def duplicate_track(self, track_index: int) -> None:
+        """Duplicate a track by its index
+
+        Args:
+            track_index: Index of the track to duplicate (1-based)
+
+        Raises:
+            InvalidParameterError: If track_index is invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        self.send(f"/track/{track_index}/duplicate", 1)
+
+    def rename_track(self, track_index: int, name: str) -> None:
+        """Rename a track
+
+        Args:
+            track_index: Index of the track to rename (1-based)
+            name: New name for the track
+
+        Raises:
+            InvalidParameterError: If parameters are invalid
+            ConnectionError: If unable to send the command
+        """
+        if not isinstance(track_index, int):
+            raise InvalidParameterError(
+                "track_index", track_index, "must be an integer"
+            )
+
+        if track_index < 1:
+            raise InvalidParameterError(
+                "track_index", track_index, "must be at least 1 (1-based indexing)"
+            )
+
+        if not isinstance(name, str) or not name.strip():
+            raise InvalidParameterError("name", name, "must be a non-empty string")
+
+        self.send(f"/track/{track_index}/name", name)
+
     # Device controls
     def set_device_parameter(self, param_index: int, value: float) -> None:
         """Set device parameter value
@@ -297,7 +570,7 @@ class BitwigOSCClient:
             )
             value = MAX_VALUE
 
-        self.send(f"/device/param/{param_index}/value", value)
+        self.send(f"/device/param/{param_index}/value", float(value))
 
     def toggle_device_bypass(self) -> None:
         """Toggle bypass state of the currently selected device

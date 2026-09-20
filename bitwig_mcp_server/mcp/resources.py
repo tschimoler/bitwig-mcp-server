@@ -42,6 +42,12 @@ def get_bitwig_resources() -> List[Resource]:
             mimeType="text/plain",
         ),
         Resource(
+            uri="bitwig://track/{index}/sends",
+            name="Track Sends",
+            description="Send levels for a specific track",
+            mimeType="text/plain",
+        ),
+        Resource(
             uri="bitwig://devices",
             name="Devices Info",
             description="Information about active devices and parameters",
@@ -195,6 +201,18 @@ async def read_resource(controller: BitwigOSCController, uri: str) -> str:
 
         elif uri == "bitwig://tracks":
             return _read_tracks_resource(controller)
+
+        elif uri.startswith("bitwig://track/") and uri.endswith("/sends"):
+            # Handle bitwig://track/{index}/sends - more specific pattern checked first
+            try:
+                # Extract track index from URI (between "track/" and "/sends")
+                parts = uri.split("/")
+                track_index = int(
+                    parts[3]
+                )  # parts[0]="", parts[1]="", parts[2]="track", parts[3]=index, parts[4]="sends"
+                return _read_track_sends_resource(controller, track_index)
+            except (ValueError, IndexError):
+                raise ValueError(f"Invalid track sends URI: {uri}")
 
         elif uri.startswith("bitwig://track/"):
             # Extract track index from URI
@@ -400,6 +418,10 @@ def _read_transport_resource(controller: BitwigOSCController) -> str:
     tempo = controller.server.get_message("/tempo/raw")
     signature_num = controller.server.get_message("/signature/numerator")
     signature_denom = controller.server.get_message("/signature/denominator")
+    record_state = controller.server.get_message("/record")
+    repeat_state = controller.server.get_message("/repeat")
+    autowrite_state = controller.server.get_message("/autowrite")
+    automation_write_mode = controller.server.get_message("/automationWriteMode")
 
     result = ["Transport State:"]
     result.append(f"Playing: {bool(play_state)}")
@@ -409,6 +431,18 @@ def _read_transport_resource(controller: BitwigOSCController) -> str:
 
     if signature_num is not None and signature_denom is not None:
         result.append(f"Time Signature: {signature_num}/{signature_denom}")
+
+    if record_state is not None:
+        result.append(f"Recording: {bool(record_state)}")
+
+    if repeat_state is not None:
+        result.append(f"Repeat: {bool(repeat_state)}")
+
+    if autowrite_state is not None:
+        result.append(f"Automation Write Enabled: {bool(autowrite_state)}")
+
+    if automation_write_mode is not None:
+        result.append(f"Automation Write Mode: {automation_write_mode}")
 
     return "\n".join(result)
 
@@ -424,8 +458,9 @@ def _read_tracks_resource(controller: BitwigOSCController) -> str:
     """
     tracks_info = []
 
-    # Attempt to get information for up to 10 tracks
-    for i in range(1, 11):
+    # Attempt to get information for up to 32 tracks (bounded by Bitwig's
+    # configured OSC track bank size, not this loop)
+    for i in range(1, 33):
         name = controller.server.get_message(f"/track/{i}/name")
 
         # If we have a name, consider the track valid
@@ -435,6 +470,7 @@ def _read_tracks_resource(controller: BitwigOSCController) -> str:
             mute = controller.server.get_message(f"/track/{i}/mute")
             solo = controller.server.get_message(f"/track/{i}/solo")
             armed = controller.server.get_message(f"/track/{i}/recarm")
+            vu = controller.server.get_message(f"/track/{i}/vu")
 
             track_info = [f"Track {i}: {name}"]
             if volume is not None:
@@ -447,6 +483,8 @@ def _read_tracks_resource(controller: BitwigOSCController) -> str:
                 track_info.append(f"  Solo: {bool(solo)}")
             if armed is not None:
                 track_info.append(f"  Record Armed: {bool(armed)}")
+            if vu is not None:
+                track_info.append(f"  VU: {vu}")
 
             tracks_info.append("\n".join(track_info))
 
@@ -484,7 +522,7 @@ def _read_track_resource(controller: BitwigOSCController, track_index: int) -> s
         "solo": "Solo",
         "recarm": "Record Armed",
         "color": "Color",
-        "sends": "Send Count",
+        "vu": "VU Level",
     }
 
     for prop_key, prop_name in properties.items():
@@ -495,6 +533,49 @@ def _read_track_resource(controller: BitwigOSCController, track_index: int) -> s
             result.append(f"{prop_name}: {value}")
 
     return "\n".join(result)
+
+
+def _read_track_sends_resource(
+    controller: BitwigOSCController, track_index: int
+) -> str:
+    """Read track sends resource
+
+    Args:
+        controller: BitwigOSCController instance
+        track_index: Index of the track to read sends for
+
+    Returns:
+        Information about sends for the track
+
+    Raises:
+        ValueError: If track is not found
+    """
+    name = controller.server.get_message(f"/track/{track_index}/name")
+    if not name:
+        raise ValueError(f"Track {track_index} not found")
+
+    sends_list = []
+
+    # Check sends 1-8
+    for send_index in range(1, 9):
+        send_name = controller.server.get_message(
+            f"/track/{track_index}/send/{send_index}/name"
+        )
+        if send_name:
+            send_volume = controller.server.get_message(
+                f"/track/{track_index}/send/{send_index}/volume"
+            )
+            send_activated = controller.server.get_message(
+                f"/track/{track_index}/send/{send_index}/activated"
+            )
+            sends_list.append(
+                f"  Send {send_index}: {send_name} - Volume: {send_volume}, Enabled: {bool(send_activated)}"
+            )
+
+    if sends_list:
+        return f"Track {track_index} Sends:\n\n" + "\n".join(sends_list)
+    else:
+        return "No sends found"
 
 
 def _read_devices_resource(controller: BitwigOSCController) -> str:

@@ -111,6 +111,35 @@ def get_bitwig_tools() -> List[Tool]:
             },
         ),
         Tool(
+            name="transport_stop",
+            description="Stop playback",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        Tool(
+            name="transport_record",
+            description="Start recording in the arranger",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        Tool(
+            name="transport_repeat",
+            description="Enable, disable, or toggle repeat/loop",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "state": {
+                        "type": "boolean",
+                        "description": "True to enable, False to disable, omit to toggle",
+                    }
+                },
+            },
+        ),
+        Tool(
             name="set_tempo",
             description="Set the tempo of the Bitwig project",
             inputSchema={
@@ -143,6 +172,50 @@ def get_bitwig_tools() -> List[Tool]:
             },
         ),
         Tool(
+            name="set_track_send_volume",
+            description="Set the send level from a track to a send channel",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "send_index": {
+                        "type": "integer",
+                        "description": "Send index (1-based)",
+                    },
+                    "volume": {
+                        "type": "number",
+                        "description": "Send volume (0-128, where 64 is unity gain)",
+                    },
+                },
+                "required": ["track_index", "send_index", "volume"],
+            },
+        ),
+        Tool(
+            name="set_track_send_enabled",
+            description="Enable or disable a track's send to a send channel",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "send_index": {
+                        "type": "integer",
+                        "description": "Send index (1-based)",
+                    },
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "True to enable, False to disable",
+                    },
+                },
+                "required": ["track_index", "send_index", "enabled"],
+            },
+        ),
+        Tool(
             name="set_track_pan",
             description="Set the pan of a track",
             inputSchema={
@@ -172,6 +245,117 @@ def get_bitwig_tools() -> List[Tool]:
                     }
                 },
                 "required": ["track_index"],
+            },
+        ),
+        Tool(
+            name="set_track_record_arm",
+            description="Set record arm state of a track",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "armed": {
+                        "type": "boolean",
+                        "description": "True to arm for recording, False to disarm",
+                    },
+                },
+                "required": ["track_index", "armed"],
+            },
+        ),
+        Tool(
+            name="set_track_solo",
+            description="Set solo state of a track",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "solo": {
+                        "type": "boolean",
+                        "description": "True to solo, False to disable solo",
+                    },
+                },
+                "required": ["track_index", "solo"],
+            },
+        ),
+        Tool(
+            name="select_track",
+            description="Select a track by index (needed before reading device resources for that track)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    }
+                },
+                "required": ["track_index"],
+            },
+        ),
+        Tool(
+            name="delete_track",
+            description="Delete a track from the project. This is destructive — it can only be undone via Bitwig's own undo (Ctrl+Z), not through this tool.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    }
+                },
+                "required": ["track_index"],
+            },
+        ),
+        Tool(
+            name="duplicate_track",
+            description="Duplicate a track",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    }
+                },
+                "required": ["track_index"],
+            },
+        ),
+        Tool(
+            name="rename_track",
+            description="Rename a track",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_index": {
+                        "type": "integer",
+                        "description": "Track index (1-based)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "New name for the track",
+                    },
+                },
+                "required": ["track_index", "name"],
+            },
+        ),
+        Tool(
+            name="add_track",
+            description="Add a new track to the project (appended to the end of the track list)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "track_type": {
+                        "type": "string",
+                        "enum": ["instrument", "audio", "effect"],
+                        "description": "Type of track to create",
+                    },
+                },
+                "required": ["track_type"],
             },
         ),
         Tool(
@@ -461,6 +645,27 @@ async def execute_tool(
             controller.client.play()
             return [TextContent(type="text", text="Transport play/pause toggled")]
 
+        elif name == "transport_stop":
+            controller.client.stop()
+            return [TextContent(type="text", text="Transport stopped")]
+
+        elif name == "transport_record":
+            controller.client.record()
+            return [TextContent(type="text", text="Recording started")]
+
+        elif name == "transport_repeat":
+            state = arguments.get("state")
+
+            if state is not None and not isinstance(state, bool):
+                raise ValueError("Invalid state: must be a boolean")
+
+            controller.client.repeat(state)
+            if state is None:
+                text = "Repeat toggled"
+            else:
+                text = f"Repeat {'enabled' if state else 'disabled'}"
+            return [TextContent(type="text", text=text)]
+
         elif name == "set_tempo":
             bpm = arguments.get("bpm")
             if bpm is None:
@@ -489,6 +694,60 @@ async def execute_tool(
             return [
                 TextContent(
                     type="text", text=f"Track {track_index} volume set to {volume}"
+                )
+            ]
+
+        elif name == "set_track_send_volume":
+            track_index = arguments.get("track_index")
+            send_index = arguments.get("send_index")
+            volume = arguments.get("volume")
+
+            if track_index is None or send_index is None or volume is None:
+                raise ValueError(
+                    "Missing required arguments: track_index, send_index, volume"
+                )
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if not isinstance(send_index, int) or send_index < 1:
+                raise ValueError("Invalid send_index: must be a positive integer")
+
+            if not isinstance(volume, (int, float)) or volume < 0 or volume > 128:
+                raise ValueError("Invalid volume: must be between 0 and 128")
+
+            controller.client.set_track_send_volume(track_index, send_index, volume)
+            return [
+                TextContent(
+                    type="text",
+                    text=f"Track {track_index} send {send_index} volume set to {volume}",
+                )
+            ]
+
+        elif name == "set_track_send_enabled":
+            track_index = arguments.get("track_index")
+            send_index = arguments.get("send_index")
+            enabled = arguments.get("enabled")
+
+            if track_index is None or send_index is None or enabled is None:
+                raise ValueError(
+                    "Missing required arguments: track_index, send_index, enabled"
+                )
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if not isinstance(send_index, int) or send_index < 1:
+                raise ValueError("Invalid send_index: must be a positive integer")
+
+            if not isinstance(enabled, bool):
+                raise ValueError("Invalid enabled: must be a boolean")
+
+            controller.client.set_track_send_enabled(track_index, send_index, enabled)
+            state = "enabled" if enabled else "disabled"
+            return [
+                TextContent(
+                    type="text", text=f"Track {track_index} send {send_index} {state}"
                 )
             ]
 
@@ -521,6 +780,112 @@ async def execute_tool(
 
             controller.client.toggle_track_mute(track_index)
             return [TextContent(type="text", text=f"Track {track_index} mute toggled")]
+
+        elif name == "set_track_record_arm":
+            track_index = arguments.get("track_index")
+            armed = arguments.get("armed")
+
+            if track_index is None or armed is None:
+                raise ValueError("Missing required arguments: track_index, armed")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if not isinstance(armed, bool):
+                raise ValueError("Invalid armed: must be a boolean")
+
+            controller.client.set_track_record_arm(track_index, armed)
+            state = "armed" if armed else "disarmed"
+            return [
+                TextContent(type="text", text=f"Track {track_index} record {state}")
+            ]
+
+        elif name == "set_track_solo":
+            track_index = arguments.get("track_index")
+            solo = arguments.get("solo")
+
+            if track_index is None or solo is None:
+                raise ValueError("Missing required arguments: track_index, solo")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if not isinstance(solo, bool):
+                raise ValueError("Invalid solo: must be a boolean")
+
+            controller.client.set_track_solo(track_index, solo)
+            state = "enabled" if solo else "disabled"
+            return [TextContent(type="text", text=f"Track {track_index} solo {state}")]
+
+        elif name == "select_track":
+            track_index = arguments.get("track_index")
+
+            if track_index is None:
+                raise ValueError("Missing required argument: track_index")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            controller.client.select_track(track_index)
+            return [TextContent(type="text", text=f"Track {track_index} selected")]
+
+        elif name == "delete_track":
+            track_index = arguments.get("track_index")
+
+            if track_index is None:
+                raise ValueError("Missing required argument: track_index")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            controller.client.delete_track(track_index)
+            return [TextContent(type="text", text=f"Track {track_index} deleted")]
+
+        elif name == "duplicate_track":
+            track_index = arguments.get("track_index")
+
+            if track_index is None:
+                raise ValueError("Missing required argument: track_index")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            controller.client.duplicate_track(track_index)
+            return [TextContent(type="text", text=f"Track {track_index} duplicated")]
+
+        elif name == "rename_track":
+            track_index = arguments.get("track_index")
+            new_name = arguments.get("name")
+
+            if track_index is None or new_name is None:
+                raise ValueError("Missing required arguments: track_index, name")
+
+            if not isinstance(track_index, int) or track_index < 1:
+                raise ValueError("Invalid track_index: must be a positive integer")
+
+            if not isinstance(new_name, str) or not new_name.strip():
+                raise ValueError("Invalid name: must be a non-empty string")
+
+            controller.client.rename_track(track_index, new_name)
+            return [
+                TextContent(
+                    type="text", text=f"Track {track_index} renamed to {new_name}"
+                )
+            ]
+
+        elif name == "add_track":
+            track_type = arguments.get("track_type")
+
+            if track_type is None:
+                raise ValueError("Missing required argument: track_type")
+
+            if track_type not in ("instrument", "audio", "effect"):
+                raise ValueError(
+                    "Invalid track_type: must be 'instrument', 'audio', or 'effect'"
+                )
+
+            controller.client.add_track(track_type)
+            return [TextContent(type="text", text=f"Added {track_type} track")]
 
         elif name == "set_device_parameter":
             param_index = arguments.get("param_index")

@@ -140,6 +140,15 @@ cython_debug/
 .idea/
 
 # MacOS
-.DS_Store/
+.DS_Store
+
+# Claude Code local settings
+.claude/
+
+# Generated pip export (deps are managed via pyproject.toml/uv.lock)
+requirements.txt
+
+# Large reference docs kept locally, not in version control
+docs/DrivenByMoss-Manual.pdf
 
 data
